@@ -506,8 +506,6 @@ end
 --=======================================================================================
 function dsk.save(filename,filetype,frombyte,tobyte,entryaddr)
 
-    print("poil")
-
     local data = ""
     local amsdosfilename = string.upper(filename)
     local pointpos = string.find(amsdosfilename,"%.")
@@ -517,8 +515,6 @@ function dsk.save(filename,filetype,frombyte,tobyte,entryaddr)
     for cpt = frombyte,tobyte-1,1 do
         data = data .. string.char(sj.get_byte(cpt))
     end
-
-    print("save "..entryaddr)
 
     return dsk.saveamsdosfile(0,amsdosfilename,filetype,frombyte,entryaddr,data)
 end
