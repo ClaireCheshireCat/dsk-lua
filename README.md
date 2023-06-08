@@ -23,7 +23,7 @@ end:
   ENDLUA
 ```
 
-- **Filename** in the AMSDOS format : 8 chars, a dot, then 3 chars for the extansion. For example "TEST.BIN" is fine
+- **Filename** in the AMSDOS format : 8 chars, a dot, then 3 chars for the extension. For example "TEST.BIN" is fine
 - **File type** : 0=Basic, 1=Binary. Usually Binary
 - **Start address** : Address where your program starts. Usually the same address than the ORG you set up at the start of your source
 - **End address** : Address where your program ends.
