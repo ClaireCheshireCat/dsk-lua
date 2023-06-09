@@ -1,10 +1,17 @@
 print("DSK Management tool - CheshireCat/Flush")
 
 local dsk = {}
-dsk.datafile = nil
-dsk.catalog = nil
-dsk.verbose = true
-dsk.tracks = nil
+dsk.verbose = false -- Displays various informations while reading/writing
+
+--=======================================================================================
+function dsk.init()
+    dsk.datafile = nil
+    dsk.catalog = nil
+    dsk.tracks = nil
+    dsk.version = 1
+end
+
+dsk.init() -- This will be executed as soon as the file is parsed
 
 --=======================================================================================
 function dsk.read(filename)
@@ -17,9 +24,15 @@ function dsk.read(filename)
     end
 
     header = dsk.datafile:read(34)
-    if(header ~= "MV - CPCEMU Disk-File\r\nDisk-Info\r\n") then
-        sj.error("The file '"..filename.."' is not a DSK file")
-        return false
+    if(header == "MV - CPCEMU Disk-File\r\nDisk-Info\r\n") then
+        dsk.version = 1
+    else
+        if(header == "EXTENDED CPC DSK File\r\nDisk-Info\r\n") then
+            dsk.version = 5
+        else
+            sj.error("The file '"..filename.."' is not a DSK file")
+            return false
+        end
     end
 
     creator = dsk.datafile:read(14)
@@ -31,11 +44,11 @@ function dsk.read(filename)
         print("Opening file : "..filename.." [Creator:'"..creator.."'/Tracks:"..dsk.tracksnumber.."/Sides:"..dsk.sidesnumber.."/Track size:"..dsk.tracksize.."]")
     end
 
-    dsk.datafile:seek("cur",204)
+    dsk.tracks={}
+
+    dsk.datafile:seek("set",256)
 
     -- Tracks reading
-
-    dsk.tracks={}
 
     for cpt_tracks_sides = 0,(dsk.tracksnumber*dsk.sidesnumber)-1,1
     do
@@ -43,10 +56,6 @@ function dsk.read(filename)
         dsk.datafile:seek("cur",4)
         local tracknum = string.byte(dsk.datafile:read(1))
         local sidenum = string.byte(dsk.datafile:read(1))
-
-        if(dsk.verbose==true) then
-            print("Track : "..tracknum.." / side : "..sidenum)
-        end
 
         dsk.datafile:seek("cur",2)
 
@@ -57,6 +66,10 @@ function dsk.read(filename)
         dsk.tracks[tracknum][sidenum].sectorsnumber = string.byte(dsk.datafile:read(1))
         dsk.tracks[tracknum][sidenum].gap = string.byte(dsk.datafile:read(1))
         dsk.tracks[tracknum][sidenum].filler = string.byte(dsk.datafile:read(1))
+
+        if(dsk.verbose==true) then
+            print("Track : "..tracknum.." / side : "..sidenum.." / sectors size : "..dsk.tracks[tracknum][sidenum].sectorssize.." / nb of sectors : "..dsk.tracks[tracknum][sidenum].sectorsnumber)
+        end
 
         dsk.tracks[tracknum][sidenum].sector={}
 
@@ -70,6 +83,11 @@ function dsk.read(filename)
             dsk.tracks[tracknum][sidenum].sector[cpt_sectors].fdc1 = string.byte(dsk.datafile:read(1))
             dsk.tracks[tracknum][sidenum].sector[cpt_sectors].fdc2 = string.byte(dsk.datafile:read(1))
             dsk.datafile:seek("cur",2)
+
+            if(dsk.verbose==true) then
+                print("Sector num : "..cpt_sectors.." / id : "..string.format("#%02x",dsk.tracks[tracknum][sidenum].sector[cpt_sectors].id).." / size : "..dsk.tracks[tracknum][sidenum].sector[cpt_sectors].size)
+            end
+    
         end
 
         pos=((dsk.datafile:seek()>>8)+1)<<8
@@ -84,8 +102,6 @@ function dsk.read(filename)
 
     dsk.datafile:close()
     dsk.datafile = nil
-
-    dsk.cat()
 
     return true
 end
@@ -107,7 +123,12 @@ function dsk.write(filename)
         return false
     end
 
-    dsk.datafile:write("MV - CPCEMU Disk-File\r\nDisk-Info\r\n")
+    if(dsk.version == 1) then
+        dsk.datafile:write("MV - CPCEMU Disk-File\r\nDisk-Info\r\n")
+    else -- revision 5
+        dsk.datafile:write("EXTENDED CPC DSK File\r\nDisk-Info\r\n")
+    end
+
     dsk.datafile:write("DSKTool/Flush"..string.char(228))
 
     dsk.datafile:write(string.char(dsk.tracksnumber))
@@ -115,7 +136,25 @@ function dsk.write(filename)
     dsk.datafile:write(string.char(dsk.tracksize&255))
     dsk.datafile:write(string.char(dsk.tracksize>>8))
 
-    dsk.datafile:write(string.rep(string.char(0),204))
+    local nbrecords = 0
+
+    if(dsk.version == 5) then
+        for cpt_tracks = 0,dsk.tracksnumber-1,1
+        do
+            for cpt_sides = 0,dsk.sidesnumber-1,1
+            do
+                local tracklength = 1
+                for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
+                do
+                    tracklength = tracklength+(1 <<((dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].size)-1))
+                end
+                nbrecords = nbrecords+1
+                dsk.datafile:write(string.char(tracklength))
+            end
+        end
+    end
+
+    dsk.datafile:write(string.rep(string.char(0),204-nbrecords))
 
 
     for cpt_tracks = 0,dsk.tracksnumber-1,1
@@ -144,7 +183,9 @@ function dsk.write(filename)
                 dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].size))
                 dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].fdc1))
                 dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].fdc2))
-                dsk.datafile:write(string.rep(string.char(0),2))
+                local sizeofsector=(256<<(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].size)-1)
+                dsk.datafile:write(string.char(sizeofsector&255))
+                dsk.datafile:write(string.char(sizeofsector>>8))
             end
 
             pos=dsk.datafile:seek()
@@ -195,8 +236,6 @@ function dsk.create()
             end
         end
     end
-
-    dsk.cat()
 
     return true
 end
@@ -262,46 +301,40 @@ function dsk.cat()
         dsk.create()
     end
 
-    if(dsk.catalog ~= nil) then
-        return
-    end
-
     dsk.initializefreeblocks()
 
     dsk.catalog={}
 
     local directory = dsk.getsector(0,0,0x0c1)..dsk.getsector(0,0,0x0c2)..dsk.getsector(0,0,0x0c3)..dsk.getsector(0,0,0x0c4)
 
-    local entrynum = -1
+    for entrynum=0,63,1 do
+        if(string.byte(string.sub(directory,entrynum*32+1,entrynum*32+1)) ~= 0x0E5) then
+            dsk.catalog[entrynum+1]={}
 
-    for cpt=0,63,1 do
-        entrynum = entrynum +1
-        if(string.byte(string.sub(directory,cpt*32+1,cpt*32+1)) ~= 0x0E5) then
-            dsk.catalog[entrynum]={}
-
-            dsk.catalog[entrynum].key = string.sub(directory,cpt*32,cpt*32+12)
-            dsk.catalog[entrynum].user = string.byte(directory,cpt*32+1,cpt*32+1)
-            dsk.catalog[entrynum].filename = string.sub(directory,cpt*32+1,cpt*32+12)
-            dsk.catalog[entrynum].numextension = string.byte(directory,cpt*32+13,cpt*32+13)
-            dsk.catalog[entrynum].nbrecords = string.byte(directory,cpt*32+16,cpt*32+16)
-            local nbblockstoread = ((dsk.catalog[entrynum].nbrecords+7)>>3)+1
+            dsk.catalog[entrynum+1].key = string.sub(directory,entrynum*32,entrynum*32+12)
+            dsk.catalog[entrynum+1].user = string.byte(directory,entrynum*32+1,entrynum*32+1)
+            dsk.catalog[entrynum+1].filename = string.sub(directory,entrynum*32+2,entrynum*32+12)
+            dsk.catalog[entrynum+1].numextension = string.byte(directory,entrynum*32+13,entrynum*32+13)
+            dsk.catalog[entrynum+1].nbrecords = string.byte(directory,entrynum*32+16,entrynum*32+16)
+            local nbblockstoread = ((dsk.catalog[entrynum+1].nbrecords+7)>>3)
 
             if(nbblockstoread>16) then
                 nbblockstoread=16
-            else
-                dsk.catalog[entrynum].blocks = {}
             end
 
+            dsk.catalog[entrynum+1].nbblocks = nbblockstoread
+            dsk.catalog[entrynum+1].blocks = {}
+
             for blocks = 1,nbblockstoread,1 do
-                dsk.catalog[entrynum].blocks[blocks] = string.byte(directory,cpt*32+16+blocks,cpt*32+16+blocks)
-                dsk.freeblocks[dsk.catalog[entrynum].blocks[blocks]] = false
+                dsk.catalog[entrynum+1].blocks[blocks] = string.byte(directory,entrynum*32+16+blocks,entrynum*32+16+blocks)
+                dsk.freeblocks[dsk.catalog[entrynum+1].blocks[blocks]] = false
             end
         end
     end
 
     if(dsk.verbose==true) then
         for num,direntry in pairs(dsk.catalog) do
-            io.write(direntry.user.." "..direntry.filename.." "..direntry.nbblocks.." (")
+            io.write(direntry.user.." "..direntry.numextension.." "..direntry.filename.." "..direntry.nbblocks.." (")
             for x,numblock in pairs(direntry.blocks) do
                 io.write(" "..numblock) 
             end
@@ -314,26 +347,30 @@ end
 function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
     local pos = 0
 
+    local sectorc1 = nil
     local sectorc2 = nil
+    local sectorc3 = nil
+    local sectorc4 = nil
 
-    local currentsector = nil
 
     for num, sector in pairs(dsk.tracks[0][0].sector) do
         if (sector.id == 0x0c1) then
-            currentsector = num
-        else
-            if (sector.id == 0x0c2) then
-                sectorc2 = num
-            end
+            sectorc1 = num
+        end
+        if (sector.id == 0x0c2) then
+            sectorc2 = num
+        end
+        if (sector.id == 0x0c3) then
+            sectorc3 = num
+        end
+        if (sector.id == 0x0c4) then
+            sectorc4 = num
         end
     end
 
-    if ((sectorc2 == nil)or(currentsector == nil)) then
+    if ((sectorc1 == nil)or(sectorc2 == nil)or(sectorc3 == nil)or(sectorc4 == nil)) then
         return false
     end
-
-    dsk.tracks[0][0].sector[currentsector].data = string.rep(string.char(0x0e5),512)
-    dsk.tracks[0][0].sector[sectorc2].data = string.rep(string.char(0x0e5),512)
 
     local cat = ""
 
@@ -350,20 +387,14 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
         newcat = newcat .. string.rep(string.char(0),32-string.len(newcat))
 
         cat = cat .. newcat
-        pos = pos+1
-
-        if(pos == 16) then
-            cat = cat .. string.rep(string.char(0x0e5),512-string.len(cat))
-            dsk.tracks[0][0].sector[currentsector].data = cat
-            cat = ""
-            currentsector = sectorc2
-        end
     end
 
-    if(pos~=0) then -- If the sector is not full, the data has not been written
-        cat = cat .. string.rep(string.char(0x0e5),512-string.len(cat))
-        dsk.tracks[0][0].sector[currentsector].data = cat
-    end
+    cat=cat.. string.rep(string.char(0x0e5),2048-string.len(cat))
+
+    dsk.tracks[0][0].sector[sectorc1].data = string.sub(cat,1,512)
+    dsk.tracks[0][0].sector[sectorc2].data = string.sub(cat,513,1024)
+    dsk.tracks[0][0].sector[sectorc3].data = string.sub(cat,1025,1536)
+    dsk.tracks[0][0].sector[sectorc4].data = string.sub(cat,1537,2048)
 
     dsk.catalog = nil
 
