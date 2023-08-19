@@ -3,6 +3,10 @@ print("DSK Management tool - CheshireCat/Flush")
 local dsk = {}
 dsk.verbose = false -- Displays various informations while reading/writing
 
+dsk.AMSDOS_FILETYPE_BASIC=0     -- FILETYPE constants, thanks to Lordheavy
+dsk.AMSDOS_FILETYPE_PROTECTED=1
+dsk.AMSDOS_FILETYPE_BINARY=2
+
 --=======================================================================================
 function dsk.init()
     dsk.datafile = nil
@@ -35,7 +39,7 @@ function dsk.read(filename)
         end
     end
 
-    creator = dsk.datafile:read(14)
+    local creator = dsk.datafile:read(14)
     dsk.tracksnumber = string.byte(dsk.datafile:read(1))
     dsk.sidesnumber = string.byte(dsk.datafile:read(1))
     dsk.tracksize = string.byte(dsk.datafile:read(1))+string.byte(dsk.datafile:read(1))*256
@@ -90,7 +94,7 @@ function dsk.read(filename)
     
         end
 
-        pos=((dsk.datafile:seek()>>8)+1)<<8
+        local pos=((dsk.datafile:seek()>>8)+1)<<8
         dsk.datafile:seek("set",pos)
          
         for cpt_sectors = 0,dsk.tracks[tracknum][sidenum].sectorsnumber-1,1
@@ -188,7 +192,7 @@ function dsk.write(filename)
                 dsk.datafile:write(string.char(sizeofsector>>8))
             end
 
-            pos=dsk.datafile:seek()
+            local pos=dsk.datafile:seek()
             dsk.datafile:write(string.rep(string.char(0),(((pos>>8)+1)<<8)-pos))
     
             for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
@@ -269,10 +273,10 @@ end
 
 --=======================================================================================
 function dsk.setblock(blocknum,data)
-    sectornum = blocknum*2
-    tracknum = math.floor(sectornum/9)
-    sectorid = 0xc1+(sectornum%9)
-    res = dsk.setsector(tracknum,0,sectorid,string.sub(data,1,512))
+    local sectornum = blocknum*2
+    local tracknum = math.floor(sectornum/9)
+    local sectorid = 0xc1+(sectornum%9)
+    local res = dsk.setsector(tracknum,0,sectorid,string.sub(data,1,512))
 
     if(res == false) then
         return false
@@ -291,8 +295,8 @@ function dsk.initializefreeblocks()
     for i = 2,(dsk.tracksnumber*dsk.tracksize)>>10,1 do
         dsk.freeblocks[i] = true
     end
---    dsk.freeblocks[0] = false -- Room for the directory
---    dsk.freeblocks[1] = false
+    dsk.freeblocks[0] = false -- Room for the directory
+    dsk.freeblocks[1] = false
 end
 
 --=======================================================================================
@@ -414,7 +418,7 @@ end
 --=======================================================================================
 -- user     : a byte (usually 0)
 -- filename : Filename (11 chars max) in uppercase
--- filetype : 0 => BASIC, 1=> Protected, 2 => BINARY
+-- filetype : 0 => BASIC, 1=> Protected, 2 => BINARY / Please use the contants AMSDOS_FILETYPE_BASIC, AMSDOS_FILETYPE_PROTECTED or AMSDOS_FILETYPE_BINARY
 -- loadaddr : Loading address
 -- length   : Length of the file
 function dsk.generateheader(user,filename,filetype,loadaddr,entryaddr,length)
@@ -425,7 +429,7 @@ function dsk.generateheader(user,filename,filetype,loadaddr,entryaddr,length)
     ..string.char(length&255,length>>8)
     ..string.char(0)
 
-    checksum=0
+    local checksum=0
     for cpt=1,66,1 do
         checksum = checksum + string.byte(header,cpt,cpt)
     end
@@ -435,6 +439,49 @@ function dsk.generateheader(user,filename,filetype,loadaddr,entryaddr,length)
     ..string.rep(string.char(0),59-55)
 
     return header
+end
+
+--=======================================================================================
+-- header   : The 128 bytes of a header we need to patch
+-- user     : a byte (usually 0)
+-- filename : Filename (11 chars max) in uppercase
+-- filetype : 0 => BASIC, 1=> Protected, 2 => BINARY / Please use the contants AMSDOS_FILETYPE_BASIC, AMSDOS_FILETYPE_PROTECTED or AMSDOS_FILETYPE_BINARY
+-- loadaddr : Loading address
+-- length   : Length of the file
+function dsk.populateheader(header,user,filename,filetype,loadaddr,entryaddr,length)
+    if (string.len(header)>128) then
+        sj.error("dsk.populateheader : The provided header must have a maximum length of 128 bytes")
+        return false
+    end
+
+    header=header..string.rep(string.char(0),128-string.len(header))
+    
+    local headerpatched = string.char(user)
+    ..string.upper(string.sub(filename.."           ",1,11))
+    ..string.char(0,0,0,0,0,0,filetype,0,0,loadaddr&255,loadaddr>>8,0,length&255,length>>8,entryaddr&255,entryaddr>>8)
+    ..string.sub(header,29)
+
+    print("populateheader")
+    print(string.len(headerpatched))
+
+    headerpatched2=string.sub(headerpatched,1,0x40)..string.char(length&255)..string.char(length>>8)
+                    ..string.char(0)..string.sub(headerpatched,0x44)
+    headerpatched=headerpatched2
+    
+    local checksum=0
+    for cpt=1,66,1 do
+        checksum = checksum + string.byte(headerpatched,cpt,cpt)
+    end
+
+    headerpatched2=string.sub(headerpatched,1,0x43)..string.char(checksum&255)..string.char(checksum>>8)..string.sub(headerpatched,0x46)
+
+    headerpatched=headerpatched2
+    print(string.len(headerpatched))
+
+--    headerpatched[0x43+1]=length&255
+--    headerpatched[0x43+2]=length>>8
+
+    return headerpatched
 end
 
 --=======================================================================================
@@ -487,15 +534,13 @@ function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
 end
 
 --=======================================================================================
-function dsk.saveamsdosfile(user,filename,filetype,loadaddr,entryaddr,data)
+function dsk.saveamsdosfile(user,filename,blockdata)
 
     if (dsk.freeblocks == nil) then
         dsk.cat()
     end
 
     dsk.deletefile(filename)
-
-    local blockdata = dsk.generateheader(user,filename,filetype,loadaddr,entryaddr,string.len(data))..data
 
     local nbrecords = (string.len(blockdata)+127)>>7
     local nbblocks = (string.len(blockdata)+1023)>>10
@@ -547,7 +592,27 @@ function dsk.save(filename,filetype,frombyte,tobyte,entryaddr)
         data = data .. string.char(sj.get_byte(cpt))
     end
 
-    return dsk.saveamsdosfile(0,amsdosfilename,filetype,frombyte,entryaddr,data)
+    local blockdata = dsk.generateheader(0,amsdosfilename,filetype,frombyte,entryaddr,string.len(data))..data
+
+    return dsk.saveamsdosfile(0,amsdosfilename,blockdata)
+end
+
+--=======================================================================================
+function dsk.savewithcustomheader(header,filename,filetype,frombyte,tobyte,entryaddr)
+
+    local data = ""
+    local amsdosfilename = string.upper(filename)
+    local pointpos = string.find(amsdosfilename,"%.")
+
+    amsdosfilename = string.sub(amsdosfilename,1,pointpos-1)..string.rep(" ",9-pointpos)..string.sub(amsdosfilename,pointpos-string.len(amsdosfilename))
+
+    for cpt = frombyte,tobyte-1,1 do
+        data = data .. string.char(sj.get_byte(cpt))
+    end
+
+    local blockdata = dsk.populateheader(header,0,amsdosfilename,filetype,frombyte,entryaddr,string.len(data))..data
+
+    return dsk.saveamsdosfile(0,amsdosfilename,blockdata)
 end
 
 
