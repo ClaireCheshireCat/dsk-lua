@@ -24,12 +24,12 @@ end:
 ```
 
 - **Filename** in the AMSDOS format : 8 chars, a dot, then 3 chars for the extension. For example "TEST.BIN" is fine
-- **File type** : 0=Basic, 1=Binary. Usually Binary
+- **File type** : AMSDOS_FILETYPE_BASIC, AMSDOS_FILETYPE_PROTECTED,AMSDOS_FILETYPE_BINARY. Usually Binary
 - **Start address** : Address where your program starts. Usually the same address than the ORG you set up at the start of your source
 - **End address** : Address where your program ends.
 - **Entry address** : The address where the CPC has to jump as soon as it has loaded your file. In most cases, it's the same address than the start address
 
 ...So the save line would look like :
-```dsk.save("test.bin",1,sj.get_label("start"),sj.get_label("end"),sj.get_label("start"))```
+```dsk.save("test.bin",AMSDOS_FILETYPE_BINARY,sj.get_label("start"),sj.get_label("end"),sj.get_label("start"))```
 
 
