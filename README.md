@@ -30,6 +30,6 @@ end:
 - **Entry address** : The address where the CPC has to jump as soon as it has loaded your file. In most cases, it's the same address than the start address
 
 ...So the save line would look like :
-```dsk.save("test.bin",AMSDOS_FILETYPE_BINARY,sj.get_label("start"),sj.get_label("end"),sj.get_label("start"))```
+```dsk.save("test.bin",dsk.AMSDOS_FILETYPE_BINARY,sj.get_label("start"),sj.get_label("end"),sj.get_label("start"))```
 
 
