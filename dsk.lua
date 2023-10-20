@@ -1,5 +1,3 @@
-print("DSK Management tool - CheshireCat/Flush")
-
 local dsk = {}
 dsk.verbose = false -- Displays various informations while reading/writing
 
@@ -21,7 +19,7 @@ dsk.init() -- This will be executed as soon as the file is parsed
 function dsk.read(filename)
     dsk.catalog = nil
     dsk.tracks={}
-    dsk.datafile = io.open(filename, "r")
+    dsk.datafile = io.open(filename, "rb")
     if(dsk.datafile==nil) then
         sj.error("File '"..filename.."' not found")
         return false
@@ -111,15 +109,7 @@ function dsk.read(filename)
 end
 
 --============================================================================================
-function dsk.write(filename)
-    if(dsk.tracks==nil) then
-        sj.error("File '"..filename.."' can't be written because it hasn't been initialized")
-        return false
-    end
-
-    if(dsk.catalog~=nil) then
-        dsk.writecatalog()
-    end
+function dsk.writedsk1(filename)
 
     dsk.datafile = io.open(filename, "w")
     if(dsk.datafile==nil) then
@@ -127,13 +117,8 @@ function dsk.write(filename)
         return false
     end
 
-    if(dsk.version == 1) then
-        dsk.datafile:write("MV - CPCEMU Disk-File\r\nDisk-Info\r\n")
-    else -- revision 5
-        dsk.datafile:write("EXTENDED CPC DSK File\r\nDisk-Info\r\n")
-    end
-
-    dsk.datafile:write("DSKTool/Flush"..string.char(228))
+    dsk.datafile:write("MV - CPCEMU Disk-File\r\nDisk-Info\r\n")
+    dsk.datafile:write("DSKLua/Flush"..string.char(228).." ")
 
     dsk.datafile:write(string.char(dsk.tracksnumber))
     dsk.datafile:write(string.char(dsk.sidesnumber))
@@ -142,24 +127,7 @@ function dsk.write(filename)
 
     local nbrecords = 0
 
-    if(dsk.version == 5) then
-        for cpt_tracks = 0,dsk.tracksnumber-1,1
-        do
-            for cpt_sides = 0,dsk.sidesnumber-1,1
-            do
-                local tracklength = 1
-                for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
-                do
-                    tracklength = tracklength+(1 <<((dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].size)-1))
-                end
-                nbrecords = nbrecords+1
-                dsk.datafile:write(string.char(tracklength))
-            end
-        end
-    end
-
     dsk.datafile:write(string.rep(string.char(0),204-nbrecords))
-
 
     for cpt_tracks = 0,dsk.tracksnumber-1,1
     do
@@ -194,17 +162,137 @@ function dsk.write(filename)
 
             local pos=dsk.datafile:seek()
             dsk.datafile:write(string.rep(string.char(0),(((pos>>8)+1)<<8)-pos))
-    
+            
+            local realtracksize = 256
+
             for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
             do
                 dsk.datafile:write(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data)
+                realtracksize = realtracksize + string.len(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data)
             end
-        
+
+            if(realtracksize~=dsk.tracksize) then
+                dsk.datafile:write(string.rep(string.char(0),dsk.tracksize-realtracksize))
+            end
+            
         end
     end
 
     return true
 
+end
+
+--============================================================================================
+function dsk.writedsk5(filename)
+
+    dsk.datafile = io.open(filename, "w")
+    if(dsk.datafile==nil) then
+        sj.error("File '"..filename.."' can't be opened for writing. Wrong path ?")
+        return false
+    end
+
+    dsk.datafile:write("EXTENDED CPC DSK File\r\nDisk-Info\r\n")
+    dsk.datafile:write("DSKLua/Flush"..string.char(228).." ")
+
+    dsk.datafile:write(string.char(dsk.tracksnumber))
+    dsk.datafile:write(string.char(dsk.sidesnumber))
+    dsk.datafile:write(string.char(dsk.tracksize&255))
+    dsk.datafile:write(string.char(dsk.tracksize>>8))
+
+    local nbrecords = 0
+
+    if(dsk.version == 5) then
+        for cpt_sides = 0,dsk.sidesnumber-1,1 do
+            for cpt_tracks = 0,dsk.tracksnumber-1,1 do
+                local tracklength = 256
+                for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
+                do
+                    tracklength = tracklength+(string.len(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data))
+                end
+                nbrecords = nbrecords+1
+                dsk.datafile:write(string.char(math.ceil(tracklength/256)))
+            end
+        end
+    end
+
+    dsk.datafile:write(string.rep(string.char(0),204-nbrecords))
+
+    for cpt_sides = 0,dsk.sidesnumber-1,1
+    do
+        for cpt_tracks = 0,dsk.tracksnumber-1,1
+        do
+            dsk.datafile:write("Track-Info\r\n")
+            dsk.datafile:write(string.rep(string.char(0),4))
+
+            dsk.datafile:write(string.char(cpt_tracks))
+            dsk.datafile:write(string.char(cpt_sides))
+
+            dsk.datafile:write(string.rep(string.char(0),2))
+
+            dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sectorssize))
+            dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber))
+            dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].gap))
+            dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].filler))
+
+            for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
+            do
+                dsk.datafile:write(string.char(cpt_tracks))
+                dsk.datafile:write(string.char(cpt_sides))
+                    
+                dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].id))
+                dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].size))
+                dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].fdc1))
+                dsk.datafile:write(string.char(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].fdc2))
+                local sizeofsector=(string.len(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data))
+                dsk.datafile:write(string.char(sizeofsector&255))
+                dsk.datafile:write(string.char(sizeofsector>>8))
+            end
+
+            local pos=dsk.datafile:seek()
+            dsk.datafile:write(string.rep(string.char(0),(((pos>>8)+1)<<8)-pos))
+            
+            local realtracksize = 256
+
+            for cpt_sectors = 0,dsk.tracks[cpt_tracks][cpt_sides].sectorsnumber-1,1
+            do
+                dsk.datafile:write(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data)
+                realtracksize = realtracksize + string.len(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data)
+            end
+
+            realtracksize=math.ceil(realtracksize/256)*256 -- Rounding tracksize to multiple of 256
+
+            if(realtracksize~=dsk.tracksize) then
+                dsk.datafile:write(string.rep(string.char(0),dsk.tracksize-realtracksize))
+            end  
+        end
+    end
+
+    return true
+
+end
+
+--============================================================================================
+function dsk.write(filename)
+
+    if(dsk.tracks==nil) then
+        sj.error("File '"..filename.."' can't be written because it hasn't been initialized")
+        return false
+    end
+
+    if(dsk.catalog~=nil) then
+        dsk.writecatalog()
+    end
+
+    if(dsk.version == 1) then
+        return dsk.writedsk1(filename)
+    else
+        if(dsk.version == 5) then
+            return dsk.writedsk5(filename)
+        else
+            sj.error("File '"..filename.."' can't be written because it hasn't been initialized. DSK version not set")
+            return false
+        end
+    end
 end
 
 --=======================================================================================
@@ -461,9 +549,6 @@ function dsk.populateheader(header,user,filename,filetype,loadaddr,entryaddr,len
     ..string.char(0,0,0,0,0,0,filetype,0,0,loadaddr&255,loadaddr>>8,0,length&255,length>>8,entryaddr&255,entryaddr>>8)
     ..string.sub(header,29)
 
-    print("populateheader")
-    print(string.len(headerpatched))
-
     headerpatched2=string.sub(headerpatched,1,0x40)..string.char(length&255)..string.char(length>>8)
                     ..string.char(0)..string.sub(headerpatched,0x44)
     headerpatched=headerpatched2
@@ -476,7 +561,6 @@ function dsk.populateheader(header,user,filename,filetype,loadaddr,entryaddr,len
     headerpatched2=string.sub(headerpatched,1,0x43)..string.char(checksum&255)..string.char(checksum>>8)..string.sub(headerpatched,0x46)
 
     headerpatched=headerpatched2
-    print(string.len(headerpatched))
 
 --    headerpatched[0x43+1]=length&255
 --    headerpatched[0x43+2]=length>>8
