@@ -259,10 +259,10 @@ function dsk.writedsk5(filename)
                 realtracksize = realtracksize + string.len(dsk.tracks[cpt_tracks][cpt_sides].sector[cpt_sectors].data)
             end
 
-            realtracksize=math.ceil(realtracksize/256)*256 -- Rounding tracksize to multiple of 256
+            local effectivetracksize=math.ceil(realtracksize/256)*256 -- Rounding tracksize to multiple of 256
 
-            if(realtracksize~=dsk.tracksize) then
-                dsk.datafile:write(string.rep(string.char(0),dsk.tracksize-realtracksize))
+            if(realtracksize~=effectivetracksize) then
+                dsk.datafile:write(string.rep(string.char(0),effectivetracksize-realtracksize))
             end  
         end
     end
