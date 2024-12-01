@@ -467,7 +467,6 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
     local cat = ""
 
     for num,catalogentry in pairs(dsk.catalog) do
-        print("catalogentry.nbrecords : ",catalogentry.nbrecords)
 
         local newcat = string.char(catalogentry.user)
             .. catalogentry.filename
