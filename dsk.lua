@@ -571,14 +571,13 @@ end
 --=======================================================================================
 function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
 
-    local nbblocksinceentry = 0
+    local nbblocksinentry = 0
     local currentextension = 0
     local numblockslefttowrite = #blockslist
-    local lastcatalogentrynbrecordswas128 = false
     local catalogentry = nil
 
     for n,block in pairs(blockslist) do
-        if(nbblocksinceentry == 0) then
+        if(nbblocksinentry == 0) then
             catalogentry = {}
             catalogentry.key = string.char(user)..filename
             catalogentry.user = user
@@ -587,33 +586,20 @@ function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
             catalogentry.blocks = {}
             if (numblockslefttowrite>=16) then
                 catalogentry.nbrecords = 128
-                lastcatalogentrynbrecordswas128 = true
             else
                 catalogentry.nbrecords = numblockslefttowrite*8
             end
         end
 
         table.insert(catalogentry.blocks,block)
-        nbblocksinceentry = nbblocksinceentry+1
+        nbblocksinentry = nbblocksinentry+1
         numblockslefttowrite = numblockslefttowrite -1
 
-        if((nbblocksinceentry == 16) or (numblockslefttowrite == 0)) then
+        if((nbblocksinentry == 16) or (numblockslefttowrite == 0)) then
             table.insert(dsk.catalog,catalogentry)
-            nbblocksinceentry = 0
+            nbblocksinentry = 0
             currentextension = currentextension+1
-
-            if ((lastcatalogentrynbrecordswas128 == true) and (numblockslefttowrite == 0)) then
-                catalogentry = {}
-                catalogentry.key = string.char(user)..filename
-                catalogentry.user = user
-                catalogentry.filename = filename
-                catalogentry.numextension = currentextension
-                catalogentry.blocks = {}
-                catalogentry.nbrecords = 0
-                table.insert(dsk.catalog,catalogentry)
-                lastcatalogentrynbrecordswas128 = false
-            end
-        end 
+        end
     end
 end
 
@@ -626,7 +612,7 @@ function dsk.saveamsdosfile(user,filename,blockdata)
 
     dsk.deletefile(filename)
 
-    local nbrecords = (string.len(blockdata)+127)>>7
+    local nbrecords = (string.len(blockdata)+127)>>7 -- 
     local nbblocks = (string.len(blockdata)+1023)>>10
     blockdata = blockdata..string.rep(string.char(0),nbblocks*1024-string.len(blockdata))
 
