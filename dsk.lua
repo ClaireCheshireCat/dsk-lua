@@ -589,7 +589,7 @@ function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
                 catalogentry.nbrecords = 128
                 lastcatalogentrynbrecordswas128 = true
             else
-                catalogentry.nbrecords = numblockslefttowrite
+                catalogentry.nbrecords = numblockslefttowrite*8
             end
         end
 
@@ -613,7 +613,7 @@ function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
                 table.insert(dsk.catalog,catalogentry)
                 lastcatalogentrynbrecordswas128 = false
             end
-        end
+        end 
     end
 end
 
