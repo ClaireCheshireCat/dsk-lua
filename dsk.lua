@@ -467,6 +467,7 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
     local cat = ""
 
     for num,catalogentry in pairs(dsk.catalog) do
+        print("catalogentry.nbrecords : ",catalogentry.nbrecords)
 
         local newcat = string.char(catalogentry.user)
             .. catalogentry.filename
@@ -571,14 +572,14 @@ end
 --=======================================================================================
 function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
 
-    local nbblocksinentry = 0
+    local nbblocksinceentry = 0
     local currentextension = 0
     local numblockslefttowrite = #blockslist
     local lastcatalogentrynbrecordswas128 = false
     local catalogentry = nil
 
     for n,block in pairs(blockslist) do
-        if(nbblocksinentry == 0) then
+        if(nbblocksinceentry == 0) then
             catalogentry = {}
             catalogentry.key = string.char(user)..filename
             catalogentry.user = user
@@ -589,17 +590,17 @@ function dsk.adddirectoryentry(user,filename,nbrecords,blockslist)
                 catalogentry.nbrecords = 128
                 lastcatalogentrynbrecordswas128 = true
             else
-                catalogentry.nbrecords = nbrecords
+                catalogentry.nbrecords = numblockslefttowrite
             end
         end
 
         table.insert(catalogentry.blocks,block)
-        nbblocksinentry = nbblocksinentry+1
+        nbblocksinceentry = nbblocksinceentry+1
         numblockslefttowrite = numblockslefttowrite -1
 
-        if((nbblocksinentry == 16) or (numblockslefttowrite == 0)) then        
+        if((nbblocksinceentry == 16) or (numblockslefttowrite == 0)) then
             table.insert(dsk.catalog,catalogentry)
-            nbblocksinentry = 0
+            nbblocksinceentry = 0
             currentextension = currentextension+1
 
             if ((lastcatalogentrynbrecordswas128 == true) and (numblockslefttowrite == 0)) then
@@ -677,6 +678,32 @@ function dsk.save(filename,filetype,frombyte,tobyte,entryaddr)
     end
 
     local blockdata = dsk.generateheader(0,amsdosfilename,filetype,frombyte,entryaddr,string.len(data))..data
+
+    return dsk.saveamsdosfile(0,amsdosfilename,blockdata)
+end
+
+--=======================================================================================
+function dsk.saveexternalfile(externalfile,filename,filetype,frombyte,entryaddr)
+
+    local data = ""
+    local amsdosfilename = string.upper(filename)
+    local pointpos = string.find(amsdosfilename,"%.")
+    local datafile
+
+    amsdosfilename = string.sub(amsdosfilename,1,pointpos-1)..string.rep(" ",9-pointpos)..string.sub(amsdosfilename,pointpos-string.len(amsdosfilename))
+
+    datafile = io.open(externalfile, "rb")
+    if(datafile==nil) then
+        sj.error("File '"..filename.."' not found")
+        return false
+    end
+
+    data = datafile:read("*all")
+
+    local blockdata = dsk.generateheader(0,amsdosfilename,filetype,frombyte,entryaddr,string.len(data))..data
+
+--    dsk.datafile:close()
+--    dsk.datafile = nil
 
     return dsk.saveamsdosfile(0,amsdosfilename,blockdata)
 end
