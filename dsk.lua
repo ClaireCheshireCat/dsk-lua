@@ -389,6 +389,10 @@ end
 
 --=======================================================================================
 function dsk.cat()
+    if(dsk.verbose==true) then
+        print("Entering dsk.cat")
+    end
+
     if(dsk.tracks==nil) then
         dsk.create()
     end
@@ -414,7 +418,6 @@ function dsk.cat()
                 nbblockstoread=16
             end
 
-            dsk.catalog[entrynum+1].nbblocks = nbblockstoread
             dsk.catalog[entrynum+1].blocks = {}
 
             for blocks = 1,nbblockstoread,1 do
@@ -426,7 +429,7 @@ function dsk.cat()
 
     if(dsk.verbose==true) then
         for num,direntry in pairs(dsk.catalog) do
-            io.write(direntry.user.." "..direntry.numextension.." "..direntry.filename.." "..direntry.nbblocks.." (")
+            io.write(direntry.user.." "..direntry.numextension.." "..direntry.filename.." "..#direntry.blocks.." blocks (")
             for x,numblock in pairs(direntry.blocks) do
                 io.write(" "..numblock) 
             end
@@ -437,6 +440,10 @@ end
 
 --============================================================================================
 function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
+    if(dsk.verbose==true) then
+        print("Writing catalog...")
+    end
+
     local pos = 0
 
     local sectorc1 = nil
@@ -467,18 +474,27 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
     local cat = ""
 
     for num,catalogentry in pairs(dsk.catalog) do
+        if (type(catalogentry)=='table') then
+            if(dsk.verbose==true) then
+                io.write(catalogentry.user.." "..catalogentry.numextension.." "..catalogentry.filename.." "..#catalogentry.blocks.." blocks (")
+                for x,numblock in pairs(catalogentry.blocks) do
+                    io.write(" "..numblock)
+                end
+                print(" )")
+            end
 
-        local newcat = string.char(catalogentry.user)
-            .. catalogentry.filename
-            .. string.char(catalogentry.numextension,0,0,catalogentry.nbrecords)
+            local newcat = string.char(catalogentry.user)
+                .. catalogentry.filename
+                .. string.char(catalogentry.numextension,0,0,catalogentry.nbrecords)
 
-        for blocks = 1,#(catalogentry.blocks),1 do
-            newcat = newcat .. string.char(catalogentry.blocks[blocks])
+            for blocks = 1,#(catalogentry.blocks),1 do
+                newcat = newcat .. string.char(catalogentry.blocks[blocks])
+            end
+
+            newcat = newcat .. string.rep(string.char(0),32-string.len(newcat))
+
+            cat = cat .. newcat
         end
-
-        newcat = newcat .. string.rep(string.char(0),32-string.len(newcat))
-
-        cat = cat .. newcat
     end
 
     cat=cat.. string.rep(string.char(0x0e5),2048-string.len(cat))
@@ -495,11 +511,17 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
 end
 --=======================================================================================
 function dsk.deletefile(filename)
+    if(dsk.verbose==true) then
+        print("Deleting file ",filename)
+    end
+
     for num,direntry in pairs(dsk.catalog) do
         if(direntry.filename == filename) then
-            dsk.catalog[num]={}
+--            dsk.catalog[num]={}
+            table.remove(dsk.catalog,num)
         end
     end
+
     -- Now we remove the white records
     table.sort(dsk.catalog, function (k1, k2) if(k1.key == k2.key) then return k1.numrecord<k2.numrecord else return k1.filename < k2.filename end end )
 end
