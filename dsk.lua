@@ -42,6 +42,28 @@ function dsk.read(filename)
     dsk.sidesnumber = string.byte(dsk.datafile:read(1))
     dsk.tracksize = string.byte(dsk.datafile:read(1))+string.byte(dsk.datafile:read(1))*256
 
+    -- Check tracks number. Some inconsistencies found in the DSKs provided by RVM 2
+    local counttracks = 0
+
+    for cpt_bytes = 0,203,1
+    do
+        local byte = string.byte(dsk.datafile:read(1))
+        if(byte~=0) then
+            counttracks = counttracks+1
+            if(dsk.tracksize == 0) then
+                dsk.tracksize = byte*256
+            end
+        end
+    end
+
+    if (counttracks~=dsk.tracksnumber) then
+        if(dsk.verbose==true) then
+            print("DSK Fileformat error : "..dsk.tracksnumber.." tracks announced altough "..counttracks.." are listed in the directory")
+        end
+        dsk.tracksnumber = counttracks
+    end
+
+    -- get back to normal
     if(dsk.verbose==true) then
         print("Opening file : "..filename.." [Creator:'"..creator.."'/Tracks:"..dsk.tracksnumber.."/Sides:"..dsk.sidesnumber.."/Track size:"..dsk.tracksize.."]")
     end
@@ -379,6 +401,10 @@ end
 
 --=======================================================================================
 function dsk.initializefreeblocks()
+    if(dsk.verbose==true) then
+        print("Entering dsk.initializefreeblocks")
+        print("Nb tracks = "..dsk.tracksnumber..", tracksize = "..dsk.tracksize.." ==> blocks = "..(((dsk.tracksnumber*dsk.tracksize)>>10)-2))
+    end    
     dsk.freeblocks = {}
     for i = 2,(dsk.tracksnumber*dsk.tracksize)>>10,1 do
         dsk.freeblocks[i] = true
@@ -647,7 +673,7 @@ function dsk.saveamsdosfile(user,filename,blockdata)
     end
 
     if (nbfreeblocks<nbblocks) then
-        sj.error("Not enough space on the DSK")
+        sj.error("Not enough space on the DSK : "..nbblocks..", "..nbfreeblocks.." free")
         return false
     end
 
