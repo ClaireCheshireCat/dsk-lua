@@ -36,6 +36,9 @@ function dsk.read(filename)
             return false
         end
     end
+    if(dsk.verbose==true) then
+        print("DSK Fileformat version : "..dsk.version)
+    end
 
     local creator = dsk.datafile:read(14)
     dsk.tracksnumber = string.byte(dsk.datafile:read(1))
@@ -56,7 +59,7 @@ function dsk.read(filename)
         end
     end
 
-    if (counttracks~=dsk.tracksnumber) then
+    if ((counttracks~=dsk.tracksnumber) and (dsk.version~=1)) then
         if(dsk.verbose==true) then
             print("DSK Fileformat error : "..dsk.tracksnumber.." tracks announced altough "..counttracks.." are listed in the directory")
         end
