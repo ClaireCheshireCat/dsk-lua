@@ -5,6 +5,21 @@ dsk.AMSDOS_FILETYPE_BASIC=0     -- FILETYPE constants, thanks to Lordheavy
 dsk.AMSDOS_FILETYPE_PROTECTED=1
 dsk.AMSDOS_FILETYPE_BINARY=2
 
+
+-- debug
+function dump(o)
+    if type(o) == 'table' then
+       local s = '{ '
+       for k,v in pairs(o) do
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+          s = s .. '['..k..'] = ' .. dump(v) .. ','
+       end
+       return s .. '} '
+    else
+       return tostring(o)
+    end
+ end
+
 --=======================================================================================
 function dsk.init()
     dsk.datafile = nil
@@ -432,33 +447,37 @@ function dsk.cat()
 
     local directory = dsk.getsector(0,0,0x0c1)..dsk.getsector(0,0,0x0c2)..dsk.getsector(0,0,0x0c3)..dsk.getsector(0,0,0x0c4)
 
+    local cptentry=1
+
     for entrynum=0,63,1 do
         if(string.byte(string.sub(directory,entrynum*32+1,entrynum*32+1)) ~= 0x0E5) then
-            dsk.catalog[entrynum+1]={}
+            dsk.catalog[cptentry]={}
 
-            dsk.catalog[entrynum+1].key = string.sub(directory,entrynum*32,entrynum*32+12)
-            dsk.catalog[entrynum+1].user = string.byte(directory,entrynum*32+1,entrynum*32+1)
-            dsk.catalog[entrynum+1].filename = string.sub(directory,entrynum*32+2,entrynum*32+12)
-            dsk.catalog[entrynum+1].numextension = string.byte(directory,entrynum*32+13,entrynum*32+13)
-            dsk.catalog[entrynum+1].nbrecords = string.byte(directory,entrynum*32+16,entrynum*32+16)
-            local nbblockstoread = ((dsk.catalog[entrynum+1].nbrecords+7)>>3)
+            dsk.catalog[cptentry].key = string.sub(directory,entrynum*32,entrynum*32+12)
+            dsk.catalog[cptentry].user = string.byte(directory,entrynum*32+1,entrynum*32+1)
+            dsk.catalog[cptentry].filename = string.sub(directory,entrynum*32+2,entrynum*32+12)
+            dsk.catalog[cptentry].numextension = string.byte(directory,entrynum*32+13,entrynum*32+13)
+            dsk.catalog[cptentry].nbrecords = string.byte(directory,entrynum*32+16,entrynum*32+16)
+            local nbblockstoread = ((dsk.catalog[cptentry].nbrecords+7)>>3)
 
             if(nbblockstoread>16) then
                 nbblockstoread=16
             end
 
-            dsk.catalog[entrynum+1].blocks = {}
+            dsk.catalog[cptentry].blocks = {}
 
             for blocks = 1,nbblockstoread,1 do
-                dsk.catalog[entrynum+1].blocks[blocks] = string.byte(directory,entrynum*32+16+blocks,entrynum*32+16+blocks)
-                dsk.freeblocks[dsk.catalog[entrynum+1].blocks[blocks]] = false
+                dsk.catalog[cptentry].blocks[blocks] = string.byte(directory,entrynum*32+16+blocks,entrynum*32+16+blocks)
+                dsk.freeblocks[dsk.catalog[cptentry].blocks[blocks]] = false
             end
+
+            cptentry=cptentry+1
         end
     end
 
     if(dsk.verbose==true) then
         for num,direntry in pairs(dsk.catalog) do
-            io.write(direntry.user.." "..direntry.numextension.." "..direntry.filename.." "..#direntry.blocks.." blocks (")
+            io.write(num.." : "..direntry.user.." "..direntry.numextension.." "..direntry.filename.." "..#direntry.blocks.." blocks (")
             for x,numblock in pairs(direntry.blocks) do
                 io.write(" "..numblock) 
             end
@@ -477,6 +496,7 @@ function dsk.writecatalog() -- Writes the catalog on the tracks of the dsk
 
     local sectorc1 = nil
     local sectorc2 = nil
+
     local sectorc3 = nil
     local sectorc4 = nil
 
@@ -542,6 +562,10 @@ end
 function dsk.deletefile(filename)
     if(dsk.verbose==true) then
         print("Deleting file ",filename)
+    end
+
+    if(dsk.catalog==nil) then
+--        dsk.cat()
     end
 
     for num,direntry in pairs(dsk.catalog) do
